@@ -1,0 +1,56 @@
+# =====================================================================
+# loki/loki-config.yml - DTC245220014-Detai3 (Commit 3)
+# Cau hinh Loki chay standalone, luu tru tren filesystem
+# =====================================================================
+
+# Tat authentication (chi demo local, khong dung multi-tenant)
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9096
+  log_level: info
+
+# Cau hinh storage chung: filesystem (chunks + rules tren disk)
+common:
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+# Lich su schema: boltdb-shipper cho index, filesystem cho object
+schema_config:
+  configs:
+    - from: "2020-10-24"
+      store: boltdb-shipper
+      object_store: filesystem
+      schema: v11
+      index:
+        prefix: index_
+        period: 24h
+
+# Gioi han de tranh log cu bi huy som (giu 1 tuan)
+# reject_old_samples: false - cac container khac co log cu hon 7 ngay
+# (vi du mysql-exporter tu 02/10) se khong lam lo toan bo batch push
+# -> dam bao log nginx/wordpress/mysql luon duoc gui thanh cong
+limits_config:
+  retention_period: 168h
+  reject_old_samples: false
+  reject_old_samples_max_age: 720h
+
+compactor:
+  working_directory: /loki/compactor
+  retention_enabled: true
+  compaction_interval: 10m
+
+ruler:
+  alertmanager_url: http://localhost:9093
+
+# Khong can chi so nang cao cho bai demo
+analytics:
+  reporting_enabled: false

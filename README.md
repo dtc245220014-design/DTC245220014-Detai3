@@ -20,6 +20,8 @@ Internet/User
          ^                        Node-Exporter :9100 (host metrics)
          |                                ^
  [Grafana :3000] -------------------------+
+         |  (Explore - LogQL)
+ [Loki :3100] <----push---- Promtail (doc /var/lib/docker/containers)
 ```
 
 ## Chuẩn bị SSL tự ký (PowerShell)
@@ -117,6 +119,68 @@ Kết quả đo thực tế trên máy (ví dụ):
 `MEM dtc3_wordpress = 154.5 MB`, `MEM dtc3_nginx = 13 MB`,
 `HOST_CPU_USAGE% = 3.43`.
 
+## HỆ THỐNG LOG TẬP TRUNG — LOKI + PROMTAIL (Commit 3)
+
+### Các service log
+
+| Service | Image | Cổng | Vai trò |
+|---|---|---|---|
+| loki | grafana/loki:2.9.2 | 3100 | Nhận & lưu log (filesystem, volume `loki_data`) |
+| promtail | grafana/promtail:2.9.2 | (9080 nội bộ) | Đọc log stdout của mọi container, push về Loki |
+
+- `loki/loki-config.yml`: cấu hình standalone (filesystem storage, boltdb-shipper index,
+  `reject_old_samples: false` để log cũ của container khác không làm hỏng batch push).
+- `promtail/promtail-config.yml`:
+  - `docker_sd_configs` qua `/var/run/docker.sock` → tự phát hiện container đang chạy.
+  - Đọc file log `/var/lib/docker/containers/<id>/<id>-json.log` (mount read-only).
+  - Relabel tự gán nhãn **`container_name`** (bỏ dấu `/` và bỏ prefix `dtc3_`
+    để `dtc3_nginx` → `nginx`), kèm `container_full_name`, `compose_service`, `compose_project`.
+  - Pipeline `docker` parse JSON + `drop: older_than: 168h` (loại log quá 7 ngày,
+    tránh lỗi out-of-order `entry too far behind` của Loki — giới hạn `max_chunk_age/2` = 1h).
+
+### Thêm Loki Datasource trong Grafana
+
+1. http://localhost:3000 → **Connections → Data sources → Add data source → Loki**.
+2. URL: `http://loki:3100` → **Save & test** → *"Data source is working"*.
+3. Vào **Explore** (góc trái, biểu tượng kính lúp) → chọn datasource Loki → nhập LogQL.
+
+### 3 câu LogQL demo (thực thi trên Grafana Explore / http://localhost:3100)
+
+```logql
+# CÂU 1 - Toàn bộ log của Nginx Reverse Proxy
+{container_name="nginx"}
+
+# CÂU 2 - Lọc log chứa từ khóa lỗi của Nginx và WordPress
+{container_name=~"nginx|wordpress"} |= "error"
+
+# CÂU 3 - Thống kê tần suất log của Nginx trong 5 phút (log/giây)
+rate({container_name="nginx"}[5m])
+```
+
+**Giải thích:**
+- **Câu 1** — *Log stream selector*: `{container_name="nginx"}` chọn toàn bộ stream log có
+  nhãn đúng bằng `nginx`, trả về từng dòng log gốc (đối chiếu với label
+  `GET / HTTP/1.1" 302`, `GET /phpmyadmin/ ... 200` của nginx access log).
+- **Câu 2** — `|= "error"` là *line filter*: giữ lại các dòng sau khi chọn stream
+  có regex `nginx|wordpress` và dòng chứa chuỗi `error` (không phân biệt hoa thường
+  theo mặc định là phân biệt — chuỗi phải khớp `error`). Kết quả thực tế: 3 dòng
+  (URL `/test-404-error-page`, `error_report.js` của phpMyAdmin).
+- **Câu 3** — `rate({...}[5m])` là *metric query* biến log thành số: mỗi giây Loki tính
+  số log trong cửa sổ 5 phút trượt → đơn vị **logs/second**; đo được 67 điểm dữ liệu,
+  giá trị 0.02–0.04 logs/s (phù hợp traffic curl demo).
+
+**Kết quả đo thực tế qua API Loki:**
+```
+Câu 1: {container_name="nginx"}            -> 5+ dòng, vd:
+  172.30.0.1 - - [13/Oct/2026:03:43:33 +0000] "GET / HTTP/1.1" 302 0 "-" "curl/8.21.0"
+Câu 2: |= "error"                          -> 3 dòng khớp
+Câu 3: rate([5m])                          -> 67 điểm, ~0.02-0.04 logs/sec
+Label container_name có sẵn: nginx, wordpress, mysql, phpmyadmin, prometheus, ...
+```
+
+> Lưu ý: nếu một container khác của máy trùng tên (vd container `mysql` cũ),
+  phân biệt bằng thêm nhãn: `{container_name="mysql", compose_project="dtc245220014-detai3"}`.
+
 ## Git — Commit 1
 
 ```powershell
@@ -131,5 +195,14 @@ git push -u origin main
 docker compose up -d
 git add .
 git commit -m "Commit 2: Add Prometheus metrics and Grafana monitoring"
+git push
+```
+
+## Git — Commit 3
+
+```powershell
+docker compose up -d
+git add .
+git commit -m "Commit 3: Add centralized logging with Loki and Promtail"
 git push
 ```

@@ -1,0 +1,70 @@
+# =====================================================================
+# promtail/promtail-config.yml - DTC245220014-Detai3 (Commit 3)
+# Thu log tat ca Docker container ve Loki
+# - docker_sd: tu phat hien container qua /var/run/docker.sock
+# - doc log tu /var/lib/docker/containers/<id>/<id>-json.log
+# - tu gán label container_name (bo dau / va bo prefix dtc3_)
+# =====================================================================
+
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+# Nhay log den Loki
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: containers
+
+    # --- Tu phat hien container dang chay qua Docker Socket ---
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+
+    # --- Dinh danh (relabel) ---
+    relabel_configs:
+      # Ten container: /dtc3_nginx -> dtc3_nginx (bo dau / o dau)
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/(.*)'
+        replacement: '${1}'
+        target_label: 'container_name'
+
+      # Bo prefix "dtc3_" de label khop voi query demo:
+      # dtc3_nginx -> nginx, dtc3_wordpress -> wordpress, dtc3_mysql -> mysql
+      - source_labels: ['container_name']
+        regex: 'dtc3_(.*)'
+        replacement: '${1}'
+        target_label: 'container_name'
+
+      # Giu them ten day du de phan biet voi container khac cua may
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/(.*)'
+        replacement: '${1}'
+        target_label: 'container_full_name'
+
+      # Label dich vu compose (nginx, wordpress, db, loki, ...)
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_service']
+        target_label: 'compose_service'
+
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_project']
+        target_label: 'compose_project'
+
+      # Duong dan file log cua container
+      - source_labels: ['__meta_docker_container_log_path']
+        target_label: '__path__'
+
+    # --- Parse log JSON cua Docker (timestamp, log, stream, attrs) ---
+    pipeline_stages:
+      - docker: {}
+
+      # Bo log cu hon 7 ngay truoc khi push (vi du log 25/09 cua
+      # mysql-exporter). Loki chi chap nhan out-of-order trong
+      # max_chunk_age/2 = 1h, neu khong drop thi batch bi loi 400
+      # lap vo han va chan ca cac log moi
+      - drop:
+          older_than: 168h
+          drop_counter_reason: "too_old"
