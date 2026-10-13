@@ -1,0 +1,26 @@
+# =====================================================================
+# prometheus/prometheus.yml - DTC245220014-Detai3 (Commit 2)
+# Cau hinh scrape 3 nguon: Prometheus, cAdvisor, Node-Exporter
+# =====================================================================
+
+global:
+  scrape_interval: 5s          # moi 5s lay metrics 1 lan
+  evaluation_interval: 5s
+
+scrape_configs:
+  # --- 1. Prometheus tu giam sat chinh no ---
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # --- 2. cAdvisor - metrics tung container (wordpress, nginx, db...) ---
+  - job_name: "cadvisor"
+    scrape_interval: 5s
+    static_configs:
+      - targets: ["cadvisor:8080"]
+
+  # --- 3. Node-Exporter - metrics may host (CPU, RAM, dia cang, mang) ---
+  - job_name: "node-exporter"
+    scrape_interval: 5s
+    static_configs:
+      - targets: ["node-exporter:9100"]

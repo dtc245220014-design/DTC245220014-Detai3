@@ -1,7 +1,9 @@
 # =====================================================================
 # docker-compose.yml - DTC245220014-Detai3
 # De 3 - Website Quang ba San pham (WordPress + MySQL + Nginx + PMA)
-# 4 services: db, wordpress, phpmyadmin, nginx
+# + He thong giam sat: Prometheus + cAdvisor + Node-Exporter + Grafana
+# 8 services: db, wordpress, phpmyadmin, nginx,
+#              prometheus, cadvisor, node-exporter, grafana
 # 2 networks: frontend_net, backend_net (Network Isolation)
 # =====================================================================
 
@@ -97,12 +99,103 @@ services:
     networks:
       - frontend_net
 
+  # -----------------------------------------------------------------
+  # 5. PROMETHEUS - quan ly & luu metrics (scrape 5s)
+  # -----------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: dtc3_prometheus
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      - cadvisor
+      - node-exporter
+    networks:
+      - frontend_net
+
+  # -----------------------------------------------------------------
+  # 6. CADVISOR - giam sat tai nguyen Container (CPU/RAM/Network/IO)
+  #    NOTE: de bai yeu cau v0.47.0 (gcr.io/cadvisor/cadvisor:v0.47.0),
+  #    nhung phien ban do khong doc duoc containerd-snapshotter layout
+  #    cua Docker 29 (loi "failed to identify the read-write layer ID",
+  #    xem google/cadvisor#3643 va PR #3709). Fix phat hanh tu v0.54.0,
+  #    image chinh chuyen sang ghcr.io/google/cadvisor. Dung v0.60.5
+  #    de metrics container (CPU/RAM/Network) lay duoc so lieu that.
+  # -----------------------------------------------------------------
+  cadvisor:
+    image: ghcr.io/google/cadvisor:v0.60.5
+    container_name: dtc3_cadvisor
+    restart: unless-stopped
+    privileged: true
+    devices:
+      - /dev/kmsg
+    command:
+      - "--docker_only"
+      - "--housekeeping_interval=5s"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - frontend_net
+
+  # -----------------------------------------------------------------
+  # 7. NODE-EXPORTER - thu thong so CPU/RAM/Disk/Network cua MAY HOST
+  # -----------------------------------------------------------------
+  node-exporter:
+    image: prom/node-exporter:v1.7.0
+    container_name: dtc3_nodeexporter
+    restart: unless-stopped
+    command:
+      - "--path.rootfs=/host"
+      - "--web.listen-address=:9100"
+    pid: host
+    volumes:
+      - /:/host:ro
+    ports:
+      - "9100:9100"
+    networks:
+      - frontend_net
+
+  # -----------------------------------------------------------------
+  # 8. GRAFANA - dashboard truc quan hoa metrics
+  # -----------------------------------------------------------------
+  grafana:
+    image: grafana/grafana:10.2.2
+    container_name: dtc3_grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - frontend_net
+
 # =====================================================================
 # VOLUMES & NETWORKS
 # =====================================================================
 volumes:
   db_data:
   nginx_logs:
+  grafana_data:
+  prometheus_data:
 
 networks:
   frontend_net:
