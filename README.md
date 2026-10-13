@@ -19,7 +19,7 @@
 |---|---|
 | **Họ và tên SV** | Nguyễn Minh Đức |
 | **Lớp** | K23A — An toàn thông tin |
-| **Môn học** | Quản trị hệ thống & DevOps (mã học phần: DTC245220014) |
+| **Môn học** | Triển khai và Quản trị Hệ thống Phần mềm (Mã học phần: DTC245220014) |
 | **Tên đề tài** | Đề 3 — Website Quảng bá Sản phẩm (WordPress) |
 | **Repository GitHub** | `DTC245220014-Detai3` |
 | **Vai trò** | DevOps Engineer & System Administrator |
