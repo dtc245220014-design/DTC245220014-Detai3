@@ -61,10 +61,11 @@ scrape_configs:
     pipeline_stages:
       - docker: {}
 
-      # Bo log cu hon 7 ngay truoc khi push (vi du log 25/09 cua
-      # mysql-exporter). Loki chi chap nhan out-of-order trong
-      # max_chunk_age/2 = 1h, neu khong drop thi batch bi loi 400
-      # lap vo han va chan ca cac log moi
+      # Bo log cu hon 1h truoc khi push. Loki chi chap nhan entry
+      # toi da 1h tro ve truoc (max_chunk_age/2 = out-of-order window),
+      # neu khong drop thi batch bi loi 400 "entry too far behind" lap
+      # vo han va chan cac log moi. Quy 1h cung bao phu rule 168h cu
+      # (log hon 7 ngay van bi loai vi no > 1h)
       - drop:
-          older_than: 168h
+          older_than: 1h
           drop_counter_reason: "too_old"

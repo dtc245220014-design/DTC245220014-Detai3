@@ -17,6 +17,11 @@ services:
     image: mysql:8.0
     container_name: dtc3_mysql
     restart: unless-stopped
+    # --- HARDENING #2 & #3: chan nang cao quyen + gioi han tai nguyen ---
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 1g
+    cpus: 1.0
     env_file:
       - .env
     environment:
@@ -42,6 +47,11 @@ services:
     image: wordpress:latest
     container_name: dtc3_wordpress
     restart: unless-stopped
+    # --- HARDENING #2 & #3 ---
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    cpus: 1.0
     env_file:
       - .env
     environment:
@@ -66,6 +76,11 @@ services:
     image: phpmyadmin:5.2
     container_name: dtc3_phpmyadmin
     restart: unless-stopped
+    # --- HARDENING #2 & #3 ---
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    cpus: 0.5
     env_file:
       - .env
     environment:
@@ -87,6 +102,11 @@ services:
     image: nginx:1.25-alpine
     container_name: dtc3_nginx
     restart: unless-stopped
+    # --- HARDENING #2 & #3 ---
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    cpus: 0.5
     depends_on:
       - wordpress
       - phpmyadmin
@@ -107,6 +127,13 @@ services:
     image: prom/prometheus:v2.48.0
     container_name: dtc3_prometheus
     restart: unless-stopped
+    # --- HARDENING #2 & #3: chay as nobody nen drop ALL cap duoc ---
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 512m
+    cpus: 0.5
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
@@ -136,6 +163,11 @@ services:
     image: ghcr.io/google/cadvisor:v0.60.5
     container_name: dtc3_cadvisor
     restart: unless-stopped
+    # --- HARDENING #3: gioi han tai nguyen cho container monitoring ---
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    cpus: 0.5
     privileged: true
     devices:
       - /dev/kmsg
@@ -158,6 +190,11 @@ services:
     image: prom/node-exporter:v1.7.0
     container_name: dtc3_nodeexporter
     restart: unless-stopped
+    # --- HARDENING #2 & #3 ---
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    cpus: 0.5
     command:
       - "--path.rootfs=/host"
       - "--web.listen-address=:9100"
@@ -176,6 +213,13 @@ services:
     image: grafana/grafana:10.2.2
     container_name: dtc3_grafana
     restart: unless-stopped
+    # --- HARDENING #2 & #3: chay as uid 472 (non-root) + drop ALL cap ---
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 512m
+    cpus: 0.5
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin
@@ -196,6 +240,11 @@ services:
     image: grafana/loki:2.9.2
     container_name: dtc3_loki
     restart: unless-stopped
+    # --- HARDENING #2 & #3 ---
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    cpus: 0.5
     command: -config.file=/etc/loki/loki-config.yml
     volumes:
       - ./loki/loki-config.yml:/etc/loki/loki-config.yml:ro
@@ -212,9 +261,16 @@ services:
     image: grafana/promtail:2.9.2
     container_name: dtc3_promtail
     restart: unless-stopped
+    # --- HARDENING #2 & #3 ---
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    cpus: 0.5
     command: -config.file=/etc/promtail/promtail-config.yml
     volumes:
       - ./promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      # positions persistent - khong bi replay log cu khi recreate container
+      - ./promtail/positions.yaml:/tmp/positions.yaml
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
     depends_on:

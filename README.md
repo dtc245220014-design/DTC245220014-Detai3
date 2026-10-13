@@ -181,6 +181,96 @@ Label container_name có sẵn: nginx, wordpress, mysql, phpmyadmin, prometheus,
 > Lưu ý: nếu một container khác của máy trùng tên (vd container `mysql` cũ),
   phân biệt bằng thêm nhãn: `{container_name="mysql", compose_project="dtc245220014-detai3"}`.
 
+## HARDENING BẢO MẬT (Giai đoạn 4) — 5 biện pháp
+
+### #1 Network Isolation (tách mạng + không expose DB)
+
+- `docker-compose.yml` khai báo 2 network: `frontend_net` (bridge) và `backend_net`
+  (**`internal: true`** — container trong mạng này KHÔNG có đường ra Internet).
+- `db` (MySQL) chỉ thuộc `backend_net`, **không khai báo `ports`** → không port nào
+  của MySQL được publish ra host. WordPress/ phpMyAdmin là cầu nối qua 2 mạng;
+  Nginx chỉ nằm `frontend_net`.
+
+```powershell
+# Minh chứng:
+docker inspect dtc3_mysql -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}'
+#  -> dtc245220014-detai3_backend_net
+docker port dtc3_mysql                 # -> (rỗng, không có port ra host)
+docker network inspect dtc245220014-detai3_backend_net -f 'Internal={{.Internal}}'
+#  -> Internal=true
+docker inspect dtc3_nginx -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}'
+#  -> dtc245220014-detai3_frontend_net
+```
+
+### #2 Non-root Container / Restrict Privileges
+
+- **Toàn bộ 10 service** khai báo `security_opt: ["no-new-privileges:true"]`
+  (chặn mọi cơ chế nâng quyền: setuid, file capabilities khi exec).
+- **Prometheus (chạy `uid=65534 nobody`) và Grafana (chạy `uid=472 grafana`)** thêm
+  `cap_drop: ["ALL"]` — bỏ toàn bộ Linux capability vì đã chạy non-root.
+- Các service không dùng `user: "1000:1000"` vì Nginx/MySQL/WordPress cần root ở
+  entrypoint để bind port <1024 rồi tự hạ quyền (gosu/setuid) — thay bằng NNP là đủ an toàn.
+
+```powershell
+# Minh chứng:
+docker inspect dtc3_nginx -f '{{json .HostConfig.SecurityOpt}}'
+#  -> ["no-new-privileges:true"]   (làm tương tự cho 10 container)
+docker inspect dtc3_prometheus -f '{{json .HostConfig.CapDrop}}'   # -> ["ALL"]
+docker exec dtc3_prometheus id     # -> uid=65534(nobody)
+docker exec dtc3_grafana id        # -> uid=472(grafana)
+```
+
+### #3 Resource Limits (giới hạn CPU/RAM từng container)
+
+| Container | mem_limit | cpus |
+|---|---|---|
+| db (MySQL) | 1g | 1.0 |
+| wordpress | 512m | 1.0 |
+| phpmyadmin / nginx / node-exporter / promtail | 256m | 0.5 |
+| prometheus / cadvisor / grafana / loki | 512m | 0.5 |
+
+```powershell
+# Minh chứng:
+docker inspect dtc3_mysql -f 'MemLimit={{.HostConfig.Memory}} CPU={{.HostConfig.NanoCpus}}'
+#  -> MemLimit=1073741824 (1GB) CPU=1000000000 (1 CPU)
+docker stats --no-stream   # bảng thực tế: dtc3_mysql 363.6MiB/1GiB, dtc3_nginx 13MiB/256MiB...
+```
+
+### #4 Security Headers & TLS Hardening (Nginx)
+
+- `nginx/default.conf`: `server_tokens off;`, redirect 80→443.
+- TLS: `ssl_protocols TLSv1.2 TLSv1.3;` (tắt SSLv3/TLS1.0/1.1),
+  whitelist cipher mạnh `ECDHE-...GCM/CHACHA20:!aNULL:!MD5:!RC4:!3DES`,
+  `ssl_prefer_server_ciphers on; ssl_session_tickets off;`.
+- Headers: `X-Frame-Options`, `X-Content-Type-Options`, `X-XSS-Protection`,
+  `Content-Security-Policy`, `Referrer-Policy`, `Strict-Transport-Security (HSTS)`.
+
+```powershell
+# Minh chứng headers:
+curl -skI https://localhost/
+#  -> Server: nginx (khong co version), X-Frame-Options, CSP, HSTS...
+# Minh chứng phien TLS (tu container openssl):
+docker run --rm -i alpine/openssl s_client -connect host.docker.internal:443 -servername localhost
+#  -> Protocol: TLSv1.3, Cipher is TLS_AES_256_GCM_SHA384
+docker run --rm -i alpine/openssl s_client -connect host.docker.internal:443 -tls1
+#  -> handshake that bai (TLS 1.0 bi tu choi)
+docker compose exec nginx nginx -t    # -> syntax is ok / test is successful
+```
+
+### #5 Quản lý bí mật (không commit `.env`)
+
+- `.gitignore` chặn `.env`, `nginx/ssl/` (cert/key), `promtail/positions.yaml`, log, db_data.
+
+```powershell
+# Minh chứng:
+git check-ignore -v .env              # -> .gitignore:6:.env  .env
+git ls-files | Select-String '\.env$' # -> (rỗng - khong tracked)
+git log --all --full-history -- .env  # -> (rong - khong tung commit)
+git ls-tree -r origin/main --name-only
+#  -> chi co .gitignore, README.md, docker-compose.yml, loki/, nginx/default.conf,
+#     prometheus/, promtail/  (KHONG co .env, .key, .crt)
+```
+
 ## Git — Commit 1
 
 ```powershell

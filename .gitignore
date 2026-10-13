@@ -37,6 +37,9 @@ nginx/error.log
 .DS_Store
 Thumbs.db
 
+# --- Trang thai runtime (khong commit) ---
+promtail/positions.yaml
+
 # --- Docker volumes bi tan ---
 .docker/
 
