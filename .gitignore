@@ -1,0 +1,49 @@
+# =====================================================================
+# .gitignore - DTC245220014-Detai3 (De 3 - Website Quang ba San pham)
+# =====================================================================
+
+# --- Moi truong (chua mat khau) ---
+.env
+*.env.local
+.env.*
+!.env.example
+
+# --- Du lieu MySQL (chi ton tai local, khong push len repo) ---
+db_data/
+mysql_data/
+var/lib/mysql/
+
+# --- SSL certificates & private keys (tao rieng tren moi may) ---
+nginx/ssl/
+*.crt
+*.key
+*.pem
+*.csr
+*.srl
+
+# --- Log files ---
+*.log
+logs/
+nginx/logs/
+nginx/access.log
+nginx/error.log
+
+# --- File tam / cache ---
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# --- Docker volumes bi tan ---
+.docker/
+
+# --- Editor / IDE ---
+.vscode/
+.idea/
+*.code-workspace
+
+# --- WordPress upload (khong can commit) ---
+wp-content/uploads/
